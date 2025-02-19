@@ -2,123 +2,117 @@ import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import nltk
-from nltk.corpus import stopwords
-import sys
+import json
 
-# Download NLTK data (uncomment if needed)
-# nltk.download('stopwords')
-# nltk.download('punkt')
-
-class ContentBasedRecommender:
-    def __init__(self, dataset_path, text_column, title_column=None):
+class MovieRecommender:
+    def __init__(self, dataset_path):
         """
-        Initialize the recommender with a dataset.
+        Initialize the movie recommender system.
         
         Args:
-            dataset_path (str): Path to the CSV file containing the dataset
-            text_column (str): Column name containing the text to use for recommendations
-            title_column (str, optional): Column name containing the item title/name
+            dataset_path (str): Path to the movies CSV file
         """
+        # Load and preprocess the dataset
         self.df = pd.read_csv(dataset_path)
-        self.text_column = text_column
-        self.title_column = title_column if title_column else text_column
-        self.vectorizer = None
-        self.tfidf_matrix = None
+        print(f"Loaded dataset with {len(self.df)} movies")
         
-        # Fill NaN values in text column with empty strings
-        self.df[self.text_column] = self.df[self.text_column].fillna('')
+        # Extract movie descriptions from crew data
+        self.df['description'] = self.df.apply(self._create_movie_description, axis=1)
         
-        # Initialize and fit the vectorizer
-        self._init_vectorizer()
-    
-    def _init_vectorizer(self):
-        """Initialize and fit the TF-IDF vectorizer on the dataset"""
-        stop_words = set(stopwords.words('english'))
-        self.vectorizer = TfidfVectorizer(stop_words=stop_words)
-        self.tfidf_matrix = self.vectorizer.fit_transform(self.df[self.text_column])
-    
-    def get_recommendations(self, user_input, top_n=5):
+        # Initialize and fit TF-IDF vectorizer
+        self.vectorizer = TfidfVectorizer(stop_words='english')
+        self.tfidf_matrix = self.vectorizer.fit_transform(self.df['description'])
+        print("Vectorization complete")
+
+    def _create_movie_description(self, row):
         """
-        Generate recommendations based on user input.
+        Create a text description for a movie using available information.
         
         Args:
-            user_input (str): Text description of user preferences
-            top_n (int, optional): Number of top recommendations to return
-            
+            row: DataFrame row containing movie information
+        
         Returns:
-            list: List of dictionaries containing recommended items with their scores
+            str: Combined movie description
         """
-        # Transform user input
-        user_vector = self.vectorizer.transform([user_input])
+        # Extract cast information
+        try:
+            cast_data = json.loads(row['cast'])
+            cast_names = ' '.join([person['name'] for person in cast_data[:5] 
+                                 if 'name' in person])
+        except:
+            cast_names = ''
         
-        # Compute cosine similarity between user input and all items
-        similarities = cosine_similarity(user_vector, self.tfidf_matrix).flatten()
+        # Extract crew information
+        try:
+            crew_data = json.loads(row['crew'])
+            crew_info = ' '.join([f"{person.get('job', '')} {person.get('name', '')}" 
+                                for person in crew_data 
+                                if person.get('job') in ['Director', 'Writer', 'Producer']])
+        except:
+            crew_info = ''
         
-        # Get indices of top N similar items
-        top_indices = similarities.argsort()[-top_n:][::-1]
+        # Combine all information
+        description = f"{row['title']} {cast_names} {crew_info}"
+        return description.lower()
+
+    def get_recommendations(self, query, n=5):
+        """
+        Get movie recommendations based on the input query.
+        
+        Args:
+            query (str): User's movie preference description
+            n (int): Number of recommendations to return
+        
+        Returns:
+            list: Top N movie recommendations
+        """
+        # Transform query to TF-IDF vector
+        query_vector = self.vectorizer.transform([query.lower()])
+        
+        # Calculate similarity scores
+        similarity_scores = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+        
+        # Get top N movie indices
+        top_indices = similarity_scores.argsort()[-n:][::-1]
         
         # Create recommendations list
         recommendations = []
         for idx in top_indices:
-            item = {
-                'title': self.df.iloc[idx][self.title_column],
-                'similarity': similarities[idx]
-            }
-            
-            # Add additional columns if needed
-            for col in self.df.columns:
-                if col != self.title_column and col != self.text_column:
-                    item[col] = self.df.iloc[idx][col]
-            
-            recommendations.append(item)
+            recommendations.append({
+                'title': self.df.iloc[idx]['title'],
+                'similarity': similarity_scores[idx],
+                'cast': self._get_cast_names(self.df.iloc[idx]['cast'])
+            })
         
         return recommendations
-    
-    def print_recommendations(self, recommendations):
-        """
-        Pretty-print the recommendations.
-        
-        Args:
-            recommendations (list): List of recommendation dictionaries
-        """
-        print("\nTop Recommendations:")
-        print("-" * 50)
-        
-        for i, rec in enumerate(recommendations, 1):
-            print(f"{i}. {rec['title']}")
-            print(f"   Similarity Score: {rec['similarity']:.4f}")
-            
-            # Print additional info if available
-            for key, value in rec.items():
-                if key not in ['title', 'similarity']:
-                    print(f"   {key.capitalize()}: {value}")
-            
-            print("-" * 50)
+
+    def _get_cast_names(self, cast_json):
+        """Extract cast names from JSON string"""
+        try:
+            cast_data = json.loads(cast_json)
+            return ', '.join([person['name'] for person in cast_data[:3] 
+                            if 'name' in person])
+        except:
+            return ''
 
 def main():
-    """Main function to run the recommendation system from command line"""
-    # Check if command line arguments are provided
-    if len(sys.argv) < 2:
-        print("Usage: python recommend.py \"Your query here\"")
-        return
+    # Initialize recommender
+    recommender = MovieRecommender('movies_data.csv')
     
-    # Get query from command line
-    query = sys.argv[1]
-    
-    # Initialize recommender with movie dataset
-    # Change the path and column names according to your dataset
-    recommender = ContentBasedRecommender(
-        dataset_path='movies_data.csv',
-        text_column='overview',
-        title_column='title'
-    )
+    # Get user input
+    query = input("Enter your movie preferences: ")
     
     # Get recommendations
-    recommendations = recommender.get_recommendations(query, top_n=5)
+    recommendations = recommender.get_recommendations(query)
     
     # Print recommendations
-    recommender.print_recommendations(recommendations)
+    print("\nRecommended Movies:")
+    print("-" * 50)
+    for i, rec in enumerate(recommendations, 1):
+        print(f"{i}. {rec['title']}")
+        print(f"   Similarity Score: {rec['similarity']:.4f}")
+        print(f"   Cast: {rec['cast']}")
+        print("-" * 50)
 
 if __name__ == "__main__":
     main()
