@@ -106,7 +106,7 @@ We welcome contributions! Please follow these steps:
 
 ## Salary Expectation
 
-- **$25/hr** for freelance development or contractual work.
+- **$25/hr** for Internship.
 
 ## Demo
 A demo video showcasing the recommendation system can be found here: 
