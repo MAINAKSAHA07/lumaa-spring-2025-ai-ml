@@ -109,8 +109,10 @@ We welcome contributions! Please follow these steps:
 - **$25/hr** for freelance development or contractual work.
 
 ## Demo
+A demo video showcasing the recommendation system can be found here: 
 
-A demo video showcasing the recommendation system can be found here: [Your Video Link]
+https://github.com/user-attachments/assets/5cef92ea-0f86-4222-b5b3-f8ee48f135d7
+
 
 ---
 ### Author: [Mainak Saha](https://github.com/MAINAKSAHA07)
